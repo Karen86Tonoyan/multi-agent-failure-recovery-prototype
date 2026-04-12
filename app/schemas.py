@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from enum import Enum
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Verdict(str, Enum):
@@ -19,36 +17,22 @@ class AgentPlan(BaseModel):
 
 class StampedPlan(BaseModel):
     plan_id: str
-    winner_agent_id: str
-    winner_team_id: str
-    goal: str
-    approved_steps: list[str]
-    conditions: list[str]
-    version: int
+    winner: str
+    steps: list[str]
+    checkpoints: list[str] = Field(default_factory=lambda: ["A", "B", "C", "D"])
 
 
 class ExecutionSlice(BaseModel):
     slice_id: str
-    executor_id: str
     local_goal: str
-    allowed_tools: list[str]
+    start_at: str
+    end_at: str
     stop_at: str
-    deliverable: str
 
 
 class ExecutionTrace(BaseModel):
-    executor_id: str
-    slice_id: str
     actions: list[str]
-    reports: list[str]
-    final_claim: str
-    reached_stop: bool
-    drift_detected: bool
-
-
-class CerberDecision(BaseModel):
-    decision: Verdict
-    reason: str
+    drift: bool
 
 
 class GuardianVerdict(BaseModel):

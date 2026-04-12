@@ -1,26 +1,25 @@
-from __future__ import annotations
-
 import uuid
-
 from app.schemas import ExecutionSlice, StampedPlan
 
 
 class Brain:
-    def build_slice(
-        self,
-        stamped: StampedPlan,
-        executor_id: str,
-        local_goal: str,
-        allowed_tools: list[str],
-        stop_at: str,
-        deliverable: str,
-    ) -> ExecutionSlice:
-        _ = stamped
+    def __init__(self) -> None:
+        self.current_checkpoint = "A"
+        self.history: list[str] = []
+
+    def build_slice(self, start_at: str, end_at: str) -> ExecutionSlice:
         return ExecutionSlice(
-            slice_id=f"slice-{uuid.uuid4().hex[:8]}",
-            executor_id=executor_id,
-            local_goal=local_goal,
-            allowed_tools=allowed_tools,
-            stop_at=stop_at,
-            deliverable=deliverable,
+            slice_id=str(uuid.uuid4()),
+            local_goal=f"move from {start_at} to {end_at}",
+            start_at=start_at,
+            end_at=end_at,
+            stop_at=end_at,
         )
+
+    def mark_pass(self, checkpoint: str) -> None:
+        self.current_checkpoint = checkpoint
+        self.history.append(checkpoint)
+
+    def next_edges(self, stamped: StampedPlan) -> list[tuple[str, str]]:
+        cps = stamped.checkpoints
+        return list(zip(cps[:-1], cps[1:]))

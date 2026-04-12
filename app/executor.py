@@ -1,36 +1,17 @@
-from __future__ import annotations
-
-from app import tool_runner as tools
-from app.schemas import ExecutionSlice, ExecutionTrace
+from app.schemas import ExecutionTrace
 
 
-class ExecutorAgent:
-    def __init__(self, executor_id: str) -> None:
-        self.executor_id = executor_id
+def run(slice_obj, simulate_drift: bool = False):
+    actions = [
+        f"enter:{slice_obj.start_at}",
+        f"move:{slice_obj.start_at}->{slice_obj.end_at}",
+        f"stop:{slice_obj.end_at}",
+    ]
 
-    def run(self, slice_obj: ExecutionSlice, simulate_drift: bool = False) -> ExecutionTrace:
-        actions: list[str] = []
-        reports: list[str] = []
+    if simulate_drift:
+        actions.append(f"unauthorized_continue:{slice_obj.end_at}->NEXT")
 
-        actions.append("search_code:SaveButton")
-        hits = tools.search_code("SaveButton")
-        reports.append(f"hits:{len(hits)}")
-
-        if hits:
-            actions.append(f"read_file:{hits[0]}")
-            _ = tools.read_file(hits[0])
-            reports.append("read_ok")
-
-        if simulate_drift:
-            actions.append("unauthorized_continue:next_phase")
-            reports.append("drift_attempt")
-
-        return ExecutionTrace(
-            executor_id=self.executor_id,
-            slice_id=slice_obj.slice_id,
-            actions=actions,
-            reports=reports,
-            final_claim="slice done",
-            reached_stop=not simulate_drift,
-            drift_detected=simulate_drift,
-        )
+    return ExecutionTrace(
+        actions=actions,
+        drift=simulate_drift,
+    )

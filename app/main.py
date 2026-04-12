@@ -1,87 +1,85 @@
-from __future__ import annotations
-
+import os
 import sys
-from pathlib import Path
 
-if __package__ is None or __package__ == "":
-    sys.path.append(str(Path(__file__).resolve().parents[1]))
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from app.big_head import BigHead
-from app.brain import Brain
-from app.cerber import Cerber
-from app.demo_task import GOAL
-from app.executor import ExecutorAgent
-from app.final_test import final_truth_test
-from app.guardian import Guardian
-from app.lasuch import Lasuch
 from app.market import plan_a, plan_b
-from app.registry import DeadPatternRegistry
-from app.schemas import GuardianVerdict, Verdict
+from app.big_head import choose
+from app.brain import Brain
+from app.executor import run
+from app.cerber import check
+from app.guardian import verify
+from app.lasuch import capture
+from app.registry import burn
 from app.storage import Storage
+from app.demo_task import GOAL
+from app.final_test import final_truth_test
 
 
-def run_loop(brain: Brain, stamped, cerber: Cerber, guardian: Guardian, lasuch: Lasuch, registry: DeadPatternRegistry) -> None:
-    executor_id = "executor_1"
+storage = Storage()
+brain = Brain()
 
-    for attempt in range(2):
-        print("EXECUTOR")
-        slice_ab = brain.build_slice(
-            stamped=stamped,
-            executor_id=executor_id,
-            local_goal="Trace SaveButton flow A->B",
-            allowed_tools=["search_code", "read_file"],
-            stop_at="checkpoint_B",
-            deliverable="trace_report.json",
-        )
+print("MARKET")
+a = plan_a(GOAL)
+b = plan_b(GOAL)
 
-        executor = ExecutorAgent(executor_id)
-        trace = executor.run(slice_ab, simulate_drift=(attempt == 0))
+print("BIG HEAD")
+plan = choose(a, b)
+print(f"winner: {plan.winner}")
 
-        print("CERBER")
-        decision = cerber.validate(slice_ab, trace)
-        if decision.decision != Verdict.PASS:
-            print("CUT OFF")
+edges = brain.next_edges(plan)
+executor_counter = 1
 
-        print("GUARDIAN")
-        verdict = guardian.verify_path(slice_ab, trace)
-        print(verdict.verdict.value)
+for idx, (start_at, end_at) in enumerate(edges):
+    print(f"\nSEGMENT {start_at}->{end_at}")
 
-        if verdict.verdict != Verdict.PASS:
-            corpse = lasuch.capture(trace, verdict)
-            registry.burn(corpse)
-            executor_id = f"executor_{attempt + 2}"
-            continue
+    slice_obj = brain.build_slice(start_at, end_at)
 
-        ft = final_truth_test()
-        if not ft["pass"]:
-            gv = GuardianVerdict(verdict=Verdict.SANDBOX, reason=ft["reason"])
-            corpse = lasuch.capture(trace, gv)
-            registry.burn(corpse)
-            executor_id = f"executor_{attempt + 2}"
-            continue
+    # symulacja: pierwszy segment ma drift, potem replacement i retry
+    simulate_drift = (start_at == "A" and executor_counter == 1)
 
-        print("SUCCESS -> next slice B->C (wake big model)")
-        break
+    trace = run(slice_obj, simulate_drift=simulate_drift)
 
+    print("CERBER")
+    ok = check(trace)
+    if not ok:
+        print("CUT OFF")
 
-def main() -> None:
-    print("MARKET")
-    a = plan_a(GOAL)
-    b = plan_b(GOAL)
+    print("GUARDIAN")
+    verdict = verify(trace, slice_obj)
+    print(verdict.verdict, verdict.reason)
 
-    print("BIG HEAD")
-    stamped = BigHead().choose(a, b)
+    if verdict.verdict != "PASS":
+        segment = f"{start_at}->{end_at}"
+        capture(storage, trace, segment)
+        burn(segment)
+        executor_counter += 1
+        print(f"replacement executor_{executor_counter} retries {segment}")
 
-    storage = Storage()
-    brain = Brain()
-    cerber = Cerber()
-    guardian = Guardian()
-    lasuch = Lasuch(storage)
-    registry = DeadPatternRegistry()
+        # retry same segment with new executor, no drift
+        trace = run(slice_obj, simulate_drift=False)
+        ok = check(trace)
+        verdict = verify(trace, slice_obj)
+        print(verdict.verdict, verdict.reason)
 
-    run_loop(brain, stamped, cerber, guardian, lasuch, registry)
+        if verdict.verdict != "PASS":
+            print("hard fail")
+            raise SystemExit(1)
 
+    brain.mark_pass(end_at)
+    print(f"BRAIN checkpoint -> {brain.current_checkpoint}")
 
-if __name__ == "__main__":
-    main()
+    # wake-on-checkpoint
+    print(f"BIG MODEL WAKE at {end_at} -> inject next slice")
+
+print("\nFINAL TRUTH TEST")
+ft = final_truth_test()
+print(ft)
+
+if not ft["pass"]:
+    burn("final_truth_test")
+    raise SystemExit(1)
+
+print("\nDONE")
+print("history:", brain.history)
 
